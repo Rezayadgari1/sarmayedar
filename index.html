@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>سرمایه‌دار | بازی گروهی</title>
+<style>
+:root{--bg:#101827;--panel:#1b2940;--gold:#f5c451;--ink:#f5f7fb;--muted:#aebbd0;--green:#36c98b;--red:#ef7373}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#233653,#0c1422 65%);color:var(--ink);font-family:Tahoma,Arial,sans-serif;min-height:100vh}
+main{max-width:1100px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.brand{font-size:28px;font-weight:900;color:var(--gold)}.sub{color:var(--muted);font-size:13px}
+.panel{background:#1b2940dd;border:1px solid #ffffff18;border-radius:18px;padding:18px;margin-top:16px;box-shadow:0 14px 35px #0004}
+button,input{font:inherit;border-radius:12px;padding:12px 15px;border:1px solid #ffffff22}button{background:var(--gold);color:#1a2230;font-weight:bold;cursor:pointer}button.secondary{background:#2d405c;color:white}button:disabled{opacity:.4;cursor:not-allowed}input{background:#101b2d;color:white;min-width:0}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}.hidden{display:none!important}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.stat{background:#101b2d;padding:12px;border-radius:12px}.stat small{display:block;color:var(--muted);margin-bottom:5px}
+.board{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:14px}.tile{background:#f1eee5;color:#1c2634;border-radius:10px;min-height:82px;padding:7px;text-align:center;display:flex;flex-direction:column;justify-content:space-between;font-size:12px;border-bottom:7px solid #9ba6b5}.tile strong{font-size:12px}.tile .price{font-size:11px;color:#526174}.tile.owned{outline:3px solid var(--green)}.tile.here{box-shadow:0 0 0 3px var(--gold),0 0 18px #f5c45188}.players{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.player{background:#101b2d;padding:10px 13px;border-radius:12px}.log{max-height:180px;overflow:auto;color:var(--muted);font-size:13px;line-height:1.9}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.status{color:var(--green);font-size:13px}
+@media(max-width:600px){main{padding:12px}.brand{font-size:23px}.board{gap:4px}.tile{min-height:74px;padding:4px;font-size:10px}.tile strong{font-size:10px}.tile .price{font-size:9px}.panel{padding:13px}}
+</style>
+</head>
+<body><main>
+<header class="top"><div><div class="brand">♛ سرمایه‌دار</div><div class="sub">بازی خرید ملک و مدیریت سرمایه با دوستان</div></div><div class="sub" id="connection">در حال آماده‌سازی...</div></header>
+<section class="panel" id="lobby"><h2>شروع بازی</h2><p class="sub">یک اتاق بساز و لینک دعوت را برای دوستت بفرست. بازی برای دو نفر طراحی شده است.</p><div class="row"><button id="create">ساخت اتاق جدید</button><input id="roomInput" maxlength="8" placeholder="کد اتاق"><button class="secondary" id="join">ورود به اتاق</button></div><p class="sub" id="lobbyMsg"></p></section>
+<section class="panel hidden" id="game"><div class="top"><div><h2 style="margin:0">صفحه بازی</h2><span class="sub" id="roomLabel"></span></div><div class="row"><button class="secondary" id="copy">کپی لینک دعوت</button><button class="secondary" id="leave">خروج</button></div></div>
+<div class="stats" style="margin-top:14px"><div class="stat"><small>نوبت فعلی</small><strong id="turnText">-</strong></div><div class="stat"><small>وضعیت اتصال</small><strong id="peerText">منتظر بازیکن دوم</strong></div></div>
+<div class="players" id="players"></div><div class="board" id="board"></div>
+<div class="actions"><button id="roll">🎲 پرتاب تاس</button><button class="secondary" id="buy" disabled>خرید ملک</button><button class="secondary" id="end" disabled>پایان نوبت</button></div>
+<div class="panel"><strong>سجل رویدادها</strong><div class="log" id="log"></div></div>
+</section></main>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+const supabase=createClient('https://xtfeisnshjfgrhljplyd.supabase.co','sb_publishable_EhbMz46h-7Q-afJxDeZ10A_Ixa-kLmj');
+const $=id=>document.getElementById(id);
+const names=['شروع','خیابان لاله','صندوق شانس','خیابان بهار','مالیات','ایستگاه مرکزی','خیابان حافظ','شانس','خیابان فردوسی','پارکینگ','خیابان سعدی','شرکت برق','خیابان ولیعصر','صندوق','خیابان آزادی','ایستگاه شرق','خیابان انقلاب','شانس','خیابان سپهر','خیابان دریا','زندان','خیابان نسترن','صندوق','خیابان یاس','خیابان ارغوان','ایستگاه غرب','خیابان سرو','مالیات','خیابان باران','خیابان آفتاب','استراحت','خیابان نیلوفر','شانس','خیابان کوهستان','خیابان جنگل','ایستگاه جنوب','خیابان نارون','صندوق','خیابان بهشت','خیابان قصر'];
+const prices=[0,60,0,80,100,200,100,0,120,0,140,150,140,0,160,200,180,0,180,200,0,220,0,220,240,200,260,120,260,280,0,300,0,320,340,200,360,0,380,400];
+let room=null,channel=null,playerId=crypto.randomUUID(),isHost=false,state=null,hasRolled=false,logs=[];
+const fresh=()=>({players:[{id:playerId,name:'بازیکن اول',cash:1500,pos:0,jailed:0},{id:null,name:'بازیکن دوم',cash:1500,pos:0,jailed:0}],turn:0,properties:{},lastRoll:null,finished:false});
+function log(s){logs.unshift(s);$('log').innerHTML=logs.slice(0,12).map(x=>'• '+x).join('<br>')}
+function render(){
+ if(!state)return;$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('roomLabel').textContent='کد اتاق: '+room;$('turnText').textContent=state.players[state.turn].name;$('peerText').textContent=state.players[1].id?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم';
+ $('players').innerHTML=state.players.map((p,i)=>'<div class="player">'+(i===0?'🔵 ':'🔴 ')+p.name+' | 💰 '+p.cash.toLocaleString('fa-IR')+' | خانه '+p.pos+'</div>').join('');
+ $('board').innerHTML=names.map((n,i)=>{let owner=state.properties[i];let occupants=state.players.map((p,j)=>p.pos===i?(j===0?'🔵':'🔴'):'').join('');return '<div class="tile '+(owner!==undefined?'owned ':'')+(state.players.some(p=>p.pos===i)?'here':'')+'" style="border-color:'+(owner===0?'#2586e8':owner===1?'#e45a5a':'#9ba6b5')+'"><strong>'+n+'</strong><span>'+occupants+'</span><span class="price">'+(prices[i]?prices[i]+' سکه':owner!==undefined?'مالک: '+state.players[owner].name:'')+'</span></div>'}).join('');
+ const mine=state.players[state.turn].id===playerId; $('roll').disabled=!mine||hasRolled||!state.players[1].id||state.finished;$('buy').disabled=!mine||!hasRolled||state.properties[state.players[state.turn].pos]!==undefined||!prices[state.players[state.turn].pos]||state.players[state.turn].cash<prices[state.players[state.turn].pos];$('end').disabled=!mine||!hasRolled;
+}
+async function send(){if(channel&&isHost)await channel.send({type:'broadcast',event:'state',payload:state})}
+async function enter(code,host){
+ room=code.toUpperCase();isHost=host;logs=[];state=host?fresh():null;
+ channel=supabase.channel('capital-'+room,{config:{broadcast:{self:false},presence:{key:playerId}}});
+ channel.on('broadcast',{event:'hello'},({payload})=>{if(isHost&&state&&!state.players[1].id){state.players[1]={id:payload.id,name:'بازیکن دوم',cash:1500,pos:0,jailed:0};log('بازیکن دوم وارد شد');send();render()}});
+ channel.on('broadcast',{event:'state'},({payload})=>{if(!isHost){state=payload;render()}});
+ channel.on('broadcast',{event:'action'},({payload})=>{if(isHost)act(payload.action,payload.id)});
+ channel.on('presence',{event:'sync'},()=>{const count=Object.keys(channel.presenceState()).length;$('peerText').textContent=count>1?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم'});
+ const result=await channel.subscribe(async status=>{if(status==='SUBSCRIBED'){ $('connection').textContent='متصل';await channel.track({id:playerId});if(host){log('اتاق ساخته شد. لینک دعوت را بفرست.');render();send()}else{await channel.send({type:'broadcast',event:'hello',payload:{id:playerId}});$('lobbyMsg').textContent='درخواست ورود ارسال شد.'}}});
+ if(!host){setTimeout(()=>{if(!state)$('lobbyMsg').textContent='اتاق پیدا نشد یا میزبان هنوز وارد نشده است.'},5000)}
+}
+function act(action,from){if(!isHost||!state)return;let p=state.players[state.turn];if(p.id!==from)return;
+ if(action==='roll'&&!hasRolled){let d=1+Math.floor(Math.random()*6);p.pos=(p.pos+d)%40;if(p.pos<d)p.cash+=200;state.lastRoll=d;hasRolled=true;let owner=state.properties[p.pos];if(owner!==undefined&&owner!==state.turn){let rent=Math.max(20,Math.floor(prices[p.pos]*.2));p.cash-=rent;state.players[owner].cash+=rent;log(p.name+' مبلغ '+rent+' سکه اجاره داد')}else if(p.pos===4||p.pos===27){p.cash-=100;log('مالیات: ۱۰۰ سکه پرداخت شد')}else if(p.pos===2||p.pos===7||p.pos===13||p.pos===17||p.pos===22||p.pos===32||p.pos===37){let delta=[100,-80,150,-100][Math.floor(Math.random()*4)];p.cash+=delta;log('کارت شانس: '+(delta>0?'+':'')+delta+' سکه')}else log(p.name+' عدد '+d+' آورد')}
+ if(action==='buy'&&hasRolled&&state.properties[p.pos]===undefined&&prices[p.pos]&&p.cash>=prices[p.pos]){p.cash-=prices[p.pos];state.properties[p.pos]=state.turn;log(p.name+' ملک '+names[p.pos]+' را خرید')}
+ if(action==='end'&&hasRolled){state.turn=1-state.turn;hasRolled=false;if(state.players.some(x=>x.cash<0)){state.finished=true;log('بازی با ورشکستگی پایان یافت')} }
+ send();render()
+}
+function dispatch(action){if(!state)return;let mine=state.players[state.turn].id===playerId;if(isHost){act(action,playerId)}else if(mine)channel.send({type:'broadcast',event:'action',payload:{action,id:playerId}})}
+$('create').onclick=()=>enter(Math.random().toString(36).slice(2,8),true);
+$('join').onclick=()=>{let c=$('roomInput').value.trim();if(c)enter(c,false);else $('lobbyMsg').textContent='کد اتاق را وارد کن.'};
+$('roll').onclick=()=>dispatch('roll');$('buy').onclick=()=>dispatch('buy');$('end').onclick=()=>dispatch('end');
+$('copy').onclick=async()=>{await navigator.clipboard.writeText(location.origin+location.pathname+'#'+room);$('copy').textContent='لینک کپی شد'};
+$('leave').onclick=()=>{if(channel)supabase.removeChannel(channel);location.hash='';location.reload()};
+if(location.hash.length>1){$('roomInput').value=location.hash.slice(1);enter(location.hash.slice(1),false)}
+</script></body></html>
