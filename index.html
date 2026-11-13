@@ -32,11 +32,11 @@ button,input{font:inherit;border-radius:14px;padding:13px 17px;border:1px solid 
 </head>
 <body><main>
 <header class="top"><div><div class="brand">♛ سرمایه‌دار</div><div class="sub">بازی خرید ملک و مدیریت سرمایه با دوستان</div></div><div class="sub" id="connection">در حال آماده‌سازی...</div></header>
-<section class="panel" id="lobby"><h2>♛ شروع رقابت</h2><p class="sub">اتاق بساز، دوستت را دعوت کن و برای خرید زمین و ساخت امپراتوری رقابت کن. نسخه آزمایشی فعلی برای دو بازیکن است.</p><div class="row"><button id="create">ساخت اتاق جدید</button><input id="roomInput" maxlength="8" placeholder="کد اتاق"><button class="secondary" id="join">ورود به اتاق</button></div><p class="sub" id="lobbyMsg"></p></section>
+<section class="panel" id="lobby"><h2>♛ شروع رقابت</h2><p class="sub">اتاق بساز، دوستت را دعوت کن و برای خرید زمین و ساخت امپراتوری رقابت کن. اتاق خصوصی برای ۲ تا ۸ بازیکن. میزبان پس از ورود دوستان، بازی را شروع می‌کند.</p><div class="row"><button id="create">ساخت اتاق جدید</button><input id="roomInput" maxlength="8" placeholder="کد اتاق"><button class="secondary" id="join">ورود به اتاق</button></div><p class="sub" id="lobbyMsg"></p></section>
 <section class="panel hidden" id="game"><div class="top"><div><h2 style="margin:0">صفحه رقابت</h2><span class="sub" id="roomLabel"></span></div><div class="row"><button class="secondary" id="copy">کپی لینک دعوت</button><button class="secondary" id="leave">خروج</button></div></div>
 <div class="stats" style="margin-top:14px"><div class="stat"><small>نوبت فعلی</small><strong id="turnText">-</strong></div><div class="stat"><small>وضعیت اتصال</small><strong id="peerText">منتظر بازیکن دوم</strong></div></div>
 <div class="players" id="players"></div><div class="board" id="board"></div>
-<div class="actions"><button id="roll">🎲 پرتاب تاس</button><button class="secondary" id="buy" disabled>خرید ملک</button><button class="secondary" id="end" disabled>پایان نوبت</button></div>
+<div class="actions"><button id="start">▶ شروع بازی (میزبان)</button><button id="roll">🎲 پرتاب تاس</button><button class="secondary" id="buy" disabled>خرید ملک</button><button class="secondary" id="end" disabled>پایان نوبت</button></div>
 <div class="panel"><strong>📜 رویدادهای بازی</strong><div class="log" id="log"></div></div>
 </section></main>
 <script type="module">
@@ -46,7 +46,7 @@ const $=id=>document.getElementById(id);
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const names=['شروع','خیابان لاله','صندوق شانس','خیابان بهار','مالیات','ایستگاه مرکزی','خیابان حافظ','شانس','خیابان فردوسی','پارکینگ','خیابان سعدی','شرکت برق','خیابان ولیعصر','صندوق','خیابان آزادی','ایستگاه شرق','خیابان انقلاب','شانس','خیابان سپهر','خیابان دریا','زندان','خیابان نسترن','صندوق','خیابان یاس','خیابان ارغوان','ایستگاه غرب','خیابان سرو','مالیات','خیابان باران','خیابان آفتاب','استراحت','خیابان نیلوفر','شانس','خیابان کوهستان','خیابان جنگل','ایستگاه جنوب','خیابان نارون','صندوق','خیابان بهشت','خیابان قصر'];
 const prices=[0,60,0,80,100,200,100,0,120,0,140,150,140,0,160,200,180,0,180,200,0,220,0,220,240,200,260,120,260,280,0,300,0,320,340,200,360,0,380,400];
-let room=null,roomId=null,channel=null,playerId=null,state=null,logs=[];
+let room=null,roomId=null,channel=null,playerId=null,state=null,logs=[],gameStatus='waiting';
 function log(s){logs.unshift(String(s));$('log').textContent=logs.slice(0,12).map(x=>'• '+x).join('\n')}
 async function ensureAuth(){
  let {data:{session},error}=await supabase.auth.getSession();if(error)throw error;
@@ -54,28 +54,28 @@ async function ensureAuth(){
  playerId=session.user.id;return playerId;
 }
 function isValidState(s){
- if(!s||!Array.isArray(s.players)||s.players.length<1||s.players.length>2||![0,1].includes(s.turn)||!s.properties||typeof s.properties!=='object')return false;
+ if(!s||!Array.isArray(s.players)||s.players.length<1||s.players.length>8||!Number.isInteger(s.turn)||s.turn<0||s.turn>=s.players.length||!s.properties||typeof s.properties!=='object')return false;
  if(!s.players.every(p=>p&&typeof p.id==='string'&&p.id.length<=64&&typeof p.name==='string'&&p.name.length<=24&&Number.isInteger(p.cash)&&p.cash>=-1000000&&p.cash<=10000000&&Number.isInteger(p.pos)&&p.pos>=0&&p.pos<40))return false;
- return Object.entries(s.properties).every(([k,v])=>/^(?:[0-9]|[1-3][0-9])$/.test(k)&&(v===0||v===1));
+ return Object.entries(s.properties).every(([k,v])=>/^(?:[0-9]|[1-3][0-9])$/.test(k)&&Number.isInteger(v)&&v>=0&&v<s.players.length);
 }
 function render(){
  if(!state)return;$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('roomLabel').textContent='کد اتاق: '+room;
- $('turnText').textContent=state.players[state.turn]?.name||'در انتظار بازیکن';$('peerText').textContent=state.players.length>=2?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم';
- $('players').innerHTML=state.players.map((p,i)=>'<div class="player">'+(i===0?'🔵 ':'🔴 ')+escapeHtml(p.name)+' | 💰 '+p.cash.toLocaleString('fa-IR')+' | خانه '+p.pos+'</div>').join('');
+ $('turnText').textContent=state.players[state.turn]?.name||'در انتظار بازیکن';$('peerText').textContent=state.players.length.toLocaleString('fa-IR')+' از ۸ بازیکن';\n $('start').classList.toggle('hidden',gameStatus!=='waiting');\n $('start').disabled=state.players.length<2||state.players[0]?.id!==playerId;
+ $('players').innerHTML=state.players.map((p,i)=>'<div class="player">'+(i===0?'👑 ':'♟ ')+escapeHtml(p.name)+' | 💰 '+p.cash.toLocaleString('fa-IR')+' | خانه '+p.pos+'</div>').join('');
 
  const oldRects=new Map();document.querySelectorAll('.piece').forEach(el=>oldRects.set(el.dataset.player,el.getBoundingClientRect()));
  $('board').innerHTML=names.map((n,i)=>{let owner=state.properties[i];let occupants=state.players.map((p,j)=>p.pos===i?'<span class="piece piece-'+j+'" data-player="'+j+'" title="'+escapeHtml(p.name)+'">♟</span>':'').join('');return '<div class="tile '+(owner!==undefined?'owned ':'')+(state.players.some(p=>p.pos===i)?'here':'')+'" style="border-color:'+(owner===0?'#2586e8':owner===1?'#e45a5a':'#9ba6b5')+'"><strong>'+n+'</strong><span class="pieces">'+occupants+'</span><span class="price">'+(prices[i]?prices[i]+' سکه':owner!==undefined?'مالک: '+escapeHtml(state.players[owner]?.name):'')+'</span></div>'}).join('');
  document.querySelectorAll('.piece').forEach(el=>{const key=el.dataset.player,prior=oldRects.get(key),now=el.getBoundingClientRect();if(prior&&(prior.left!==now.left||prior.top!==now.top)){const dx=prior.left-now.left,dy=prior.top-now.top;el.animate([{transform:'translate('+dx+'px,'+dy+'px) scale(.9)'},{transform:'translate(0,0) scale(1)'}],{duration:620,easing:'cubic-bezier(.2,.75,.25,1)'});}else{el.classList.add('arriving');}});
 
  const mine=state.players[state.turn]?.id===playerId,p=state.players[state.turn];
- $('roll').disabled=!mine||state.hasRolled||state.players.length<2||state.finished;
- $('buy').disabled=!mine||!state.hasRolled||!p||state.properties[p.pos]!==undefined||!prices[p.pos]||p.cash<prices[p.pos];
- $('end').disabled=!mine||!state.hasRolled||state.finished;
+ $('roll').disabled=gameStatus!=='playing'||!mine||state.hasRolled||state.players.length<2||state.finished;
+ $('buy').disabled=gameStatus!=='playing'||!mine||!state.hasRolled||!p||state.properties[p.pos]!==undefined||!prices[p.pos]||p.cash<prices[p.pos];
+ $('end').disabled=gameStatus!=='playing'||!mine||!state.hasRolled||state.finished;
 }
 async function subscribeRoom(){
  if(channel)await supabase.removeChannel(channel);
  channel=supabase.channel('secure-room-'+roomId);
- channel.on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:'id=eq.'+roomId},payload=>{const next=payload.new?.state;if(isValidState(next)){state=next;render()}});
+ channel.on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:'id=eq.'+roomId},payload=>{const next=payload.new?.state;if(isValidState(next)){state=next;gameStatus=payload.new.status||gameStatus;render()}});
  const {error}=await channel.subscribe();if(error)throw error;
 }
 async function enter(code,host){
@@ -86,11 +86,11 @@ async function enter(code,host){
   const displayName=(prompt('نام نمایشی شما چیست؟','بازیکن')||'بازیکن').trim().slice(0,24)||'بازیکن';
   const result=host?await supabase.rpc('create_capital_room',{p_display_name:displayName}):await supabase.rpc('join_capital_room',{p_code:code.toUpperCase(),p_display_name:displayName});
   if(result.error)throw result.error;
-  const data=result.data;room=data.code;roomId=data.room_id;state=data.state;logs=[];
+  const data=result.data;room=data.code;roomId=data.room_id;state=data.state;gameStatus=data.status||'waiting';logs=[];
   await subscribeRoom();$('connection').textContent='اتصال امن برقرار شد';log(host?'اتاق ساخته شد. کد را برای دوستت بفرست.':'با موفقیت وارد اتاق شدی.');render();
  }catch(error){$('connection').textContent='اتصال برقرار نشد';$('lobbyMsg').textContent='خطا: '+(error.message||'اتصال به سرور ناموفق بود');console.error(error);}
 }
-async function dispatch(action){
+async function startGame(){\n if(!room||gameStatus!=='waiting'||state?.players[0]?.id!==playerId)return;\n $('start').disabled=true;\n try{const {data,error}=await supabase.rpc('start_capital_game',{p_code:room});if(error)throw error;state=data.state;gameStatus=data.status||'playing';log('میزبان بازی را شروع کرد.');render();}\n catch(error){log('خطا در شروع بازی: '+(error.message||'درخواست ناموفق'));render();}\n}\nasync function dispatch(action){
  if(!state||!room||state.players[state.turn]?.id!==playerId)return;
  for(const id of ['roll','buy','end'])$(id).disabled=true;
  try{
@@ -100,7 +100,7 @@ async function dispatch(action){
 }
 $('create').onclick=()=>enter(Math.random().toString(36).slice(2,8).toUpperCase(),true);
 $('join').onclick=()=>{const c=$('roomInput').value.trim();if(c)enter(c,false);else $('lobbyMsg').textContent='کد اتاق را وارد کن.'};
-$('roll').onclick=()=>dispatch('roll');$('buy').onclick=()=>dispatch('buy');$('end').onclick=()=>dispatch('end');
+$('start').onclick=startGame;$('roll').onclick=()=>dispatch('roll');$('buy').onclick=()=>dispatch('buy');$('end').onclick=()=>dispatch('end');
 $('copy').onclick=async()=>{const link=location.origin+location.pathname+'#'+room;try{await navigator.clipboard.writeText(link);$('copy').textContent='لینک کپی شد'}catch{$('copy').textContent=room}};
 $('leave').onclick=async()=>{if(channel)await supabase.removeChannel(channel);location.hash='';location.reload()};
 if(location.hash.length>1){$('roomInput').value=location.hash.slice(1);enter(location.hash.slice(1),false)}
