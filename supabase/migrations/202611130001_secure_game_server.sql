@@ -31,21 +31,31 @@ create index if not exists game_rooms_status_created_idx on public.game_rooms(st
 alter table public.game_rooms enable row level security;
 alter table public.game_room_members enable row level security;
 
+create or replace function public.is_game_room_member(p_room_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $
+  select exists (
+    select 1 from public.game_room_members m
+    where m.room_id = p_room_id and m.user_id = auth.uid()
+  );
+$;
+
+revoke all on function public.is_game_room_member(uuid) from public, anon;
+grant execute on function public.is_game_room_member(uuid) to authenticated;
+
 drop policy if exists "members read own rooms" on public.game_rooms;
 create policy "members read own rooms"
 on public.game_rooms for select to authenticated
-using (exists (
-  select 1 from public.game_room_members m
-  where m.room_id = game_rooms.id and m.user_id = auth.uid()
-));
+using (public.is_game_room_member(id));
 
 drop policy if exists "members read own membership" on public.game_room_members;
 create policy "members read own membership"
 on public.game_room_members for select to authenticated
-using (exists (
-  select 1 from public.game_room_members mine
-  where mine.room_id = game_room_members.room_id and mine.user_id = auth.uid()
-));
+using (public.is_game_room_member(room_id));
 
 revoke all on public.game_rooms from anon, authenticated;
 revoke all on public.game_room_members from anon, authenticated;
@@ -213,11 +223,7 @@ begin
 
   if p_action='roll' then
     if coalesce((v_state->>'hasRolled')::boolean,false) then raise exception 'ALREADY_ROLLED' using errcode = 'P0001'; end if;
-    v_roll := (get_byte(extensions.gen_random_bytes(4),0)*16777216
-             + get_byte(extensions.gen_random_bytes(4),1)*65536
-             + get_byte(extensions.gen_random_bytes(4),2)*256
-             + get_byte(extensions.gen_random_bytes(4),3)) % 6 + 1;
-    -- Use one cryptographic byte for the die result. Modulo bias is negligible.
+    -- The die result is generated on the database server, never on the client.
     v_roll := get_byte(extensions.gen_random_bytes(1),0) % 6 + 1;
     v_pos := (v_pos + v_roll) % 40;
     if v_pos < (v_player->>'pos')::integer then v_cash := v_cash + 200; end if;
