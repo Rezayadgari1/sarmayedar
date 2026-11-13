@@ -29,7 +29,7 @@ create index if not exists game_room_members_user_idx on public.game_room_member
 create index if not exists game_rooms_status_created_idx on public.game_rooms(status, created_at desc);
 
 -- Enable authenticated clients to receive room state updates through Supabase Realtime.
-do $
+do $$
 begin
   if not exists (
     select 1 from pg_publication_tables
@@ -40,7 +40,7 @@ begin
     alter publication supabase_realtime add table public.game_rooms;
   end if;
 end
-$;
+$$;
 
 
 alter table public.game_rooms enable row level security;
@@ -52,12 +52,12 @@ language sql
 stable
 security definer
 set search_path = ''
-as $
+as $$
   select exists (
     select 1 from public.game_room_members m
     where m.room_id = p_room_id and m.user_id = auth.uid()
   );
-$;
+$$;
 
 revoke all on function public.is_game_room_member(uuid) from public, anon;
 grant execute on function public.is_game_room_member(uuid) to authenticated;
