@@ -60,7 +60,9 @@ function isValidState(s){
 }
 function render(){
  if(!state)return;$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('roomLabel').textContent='کد اتاق: '+room;
- $('turnText').textContent=state.players[state.turn]?.name||'در انتظار بازیکن';$('peerText').textContent=state.players.length.toLocaleString('fa-IR')+' از ۸ بازیکن';\n $('start').classList.toggle('hidden',gameStatus!=='waiting');\n $('start').disabled=state.players.length<2||state.players[0]?.id!==playerId;
+ $('turnText').textContent=state.players[state.turn]?.name||'در انتظار بازیکن';$('peerText').textContent=state.players.length.toLocaleString('fa-IR')+' از ۸ بازیکن';
+ $('start').classList.toggle('hidden',gameStatus!=='waiting');
+ $('start').disabled=state.players.length<2||state.players[0]?.id!==playerId;
  $('players').innerHTML=state.players.map((p,i)=>'<div class="player">'+(i===0?'👑 ':'♟ ')+escapeHtml(p.name)+' | 💰 '+p.cash.toLocaleString('fa-IR')+' | خانه '+p.pos+'</div>').join('');
 
  const oldRects=new Map();document.querySelectorAll('.piece').forEach(el=>oldRects.set(el.dataset.player,el.getBoundingClientRect()));
@@ -90,7 +92,10 @@ async function enter(code,host){
   await subscribeRoom();$('connection').textContent='اتصال امن برقرار شد';log(host?'اتاق ساخته شد. کد را برای دوستت بفرست.':'با موفقیت وارد اتاق شدی.');render();
  }catch(error){$('connection').textContent='اتصال برقرار نشد';$('lobbyMsg').textContent='خطا: '+(error.message||'اتصال به سرور ناموفق بود');console.error(error);}
 }
-async function startGame(){\n if(!room||gameStatus!=='waiting'||state?.players[0]?.id!==playerId)return;\n $('start').disabled=true;\n try{const {data,error}=await supabase.rpc('start_capital_game',{p_code:room});if(error)throw error;state=data.state;gameStatus=data.status||'playing';log('میزبان بازی را شروع کرد.');render();}\n catch(error){log('خطا در شروع بازی: '+(error.message||'درخواست ناموفق'));render();}\n}\nasync function dispatch(action){
+async function startGame(){
+ if(!room||gameStatus!=='waiting'||state?.players[0]?.id!==playerId)return;
+ $('start').disabled=true;\n try{const {data,error}=await supabase.rpc('start_capital_game',{p_code:room});if(error)throw error;state=data.state;gameStatus=data.status||'playing';log('میزبان بازی را شروع کرد.');render();}\n catch(error){log('خطا در شروع بازی: '+(error.message||'درخواست ناموفق'));render();}\n}
+async function dispatch(action){
  if(!state||!room||state.players[state.turn]?.id!==playerId)return;
  for(const id of ['roll','buy','end'])$(id).disabled=true;
  try{
