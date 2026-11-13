@@ -29,45 +29,61 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const supabase=createClient('https://xtfeisnshjfgrhljplyd.supabase.co','sb_publishable_EhbMz46h-7Q-afJxDeZ10A_Ixa-kLmj');
 const $=id=>document.getElementById(id);
 const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const names=['شروع','خیابان لاله','صندوق شانس','خیابان بهار','مالیات','ایستگاه مرکزی','خیابان حافظ','شانس','خیابان فردوسی','پارکینگ','خیابان سعدی','شرکت برق','خیابان ولیعصر','صندوق','خیابان آزادی','ایستگاه شرق','خیابان انقلاب','شانس','خیابان سپهر','خیابان دریا','زندان','خیابان نسترن','صندوق','خیابان یاس','خیابان ارغوان','ایستگاه غرب','خیابان سرو','مالیات','خیابان باران','خیابان آفتاب','استراحت','خیابان نیلوفر','شانس','خیابان کوهستان','خیابان جنگل','ایستگاه جنوب','خیابان نارون','صندوق','خیابان بهشت','خیابان قصر'];
+const prices=[0,60,0,80,100,200,100,0,120,0,140,150,140,0,160,200,180,0,180,200,0,220,0,220,240,200,260,120,260,280,0,300,0,320,340,200,360,0,380,400];
+let room=null,roomId=null,channel=null,playerId=null,state=null,logs=[];
+function log(s){logs.unshift(String(s));$('log').textContent=logs.slice(0,12).map(x=>'• '+x).join('\n')}
+async function ensureAuth(){
+ let {data:{session},error}=await supabase.auth.getSession();if(error)throw error;
+ if(!session){const result=await supabase.auth.signInAnonymously();if(result.error)throw result.error;session=result.data.session;}
+ playerId=session.user.id;return playerId;
+}
 function isValidState(s){
- if(!s||!Array.isArray(s.players)||s.players.length!==2||![0,1].includes(s.turn)||!s.properties||typeof s.properties!=='object')return false;
+ if(!s||!Array.isArray(s.players)||s.players.length<1||s.players.length>2||![0,1].includes(s.turn)||!s.properties||typeof s.properties!=='object')return false;
  if(!s.players.every(p=>p&&typeof p.id==='string'&&p.id.length<=64&&typeof p.name==='string'&&p.name.length<=24&&Number.isInteger(p.cash)&&p.cash>=-1000000&&p.cash<=10000000&&Number.isInteger(p.pos)&&p.pos>=0&&p.pos<40))return false;
  return Object.entries(s.properties).every(([k,v])=>/^(?:[0-9]|[1-3][0-9])$/.test(k)&&(v===0||v===1));
 }
-const names=['شروع','خیابان لاله','صندوق شانس','خیابان بهار','مالیات','ایستگاه مرکزی','خیابان حافظ','شانس','خیابان فردوسی','پارکینگ','خیابان سعدی','شرکت برق','خیابان ولیعصر','صندوق','خیابان آزادی','ایستگاه شرق','خیابان انقلاب','شانس','خیابان سپهر','خیابان دریا','زندان','خیابان نسترن','صندوق','خیابان یاس','خیابان ارغوان','ایستگاه غرب','خیابان سرو','مالیات','خیابان باران','خیابان آفتاب','استراحت','خیابان نیلوفر','شانس','خیابان کوهستان','خیابان جنگل','ایستگاه جنوب','خیابان نارون','صندوق','خیابان بهشت','خیابان قصر'];
-const prices=[0,60,0,80,100,200,100,0,120,0,140,150,140,0,160,200,180,0,180,200,0,220,0,220,240,200,260,120,260,280,0,300,0,320,340,200,360,0,380,400];
-let room=null,channel=null,playerId=crypto.randomUUID(),isHost=false,state=null,hasRolled=false,logs=[];
-const fresh=()=>({players:[{id:playerId,name:'بازیکن اول',cash:1500,pos:0,jailed:0},{id:null,name:'بازیکن دوم',cash:1500,pos:0,jailed:0}],turn:0,properties:{},lastRoll:null,finished:false});
-function log(s){logs.unshift(String(s));$('log').textContent=logs.slice(0,12).map(x=>'• '+x).join('\n')}
 function render(){
- if(!state)return;$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('roomLabel').textContent='کد اتاق: '+room;$('turnText').textContent=state.players[state.turn].name;$('peerText').textContent=state.players[1].id?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم';
+ if(!state)return;$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('roomLabel').textContent='کد اتاق: '+room;
+ $('turnText').textContent=state.players[state.turn]?.name||'در انتظار بازیکن';$('peerText').textContent=state.players.length>=2?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم';
  $('players').innerHTML=state.players.map((p,i)=>'<div class="player">'+(i===0?'🔵 ':'🔴 ')+escapeHtml(p.name)+' | 💰 '+p.cash.toLocaleString('fa-IR')+' | خانه '+p.pos+'</div>').join('');
- $('board').innerHTML=names.map((n,i)=>{let owner=state.properties[i];let occupants=state.players.map((p,j)=>p.pos===i?(j===0?'🔵':'🔴'):'').join('');return '<div class="tile '+(owner!==undefined?'owned ':'')+(state.players.some(p=>p.pos===i)?'here':'')+'" style="border-color:'+(owner===0?'#2586e8':owner===1?'#e45a5a':'#9ba6b5')+'"><strong>'+n+'</strong><span>'+occupants+'</span><span class="price">'+(prices[i]?prices[i]+' سکه':owner!==undefined?'مالک: '+escapeHtml(state.players[owner].name):'')+'</span></div>'}).join('');
- const mine=state.players[state.turn].id===playerId; $('roll').disabled=!mine||hasRolled||!state.players[1].id||state.finished;$('buy').disabled=!mine||!hasRolled||state.properties[state.players[state.turn].pos]!==undefined||!prices[state.players[state.turn].pos]||state.players[state.turn].cash<prices[state.players[state.turn].pos];$('end').disabled=!mine||!hasRolled;
+ $('board').innerHTML=names.map((n,i)=>{let owner=state.properties[i];let occupants=state.players.map((p,j)=>p.pos===i?(j===0?'🔵':'🔴'):'').join('');return '<div class="tile '+(owner!==undefined?'owned ':'')+(state.players.some(p=>p.pos===i)?'here':'')+'" style="border-color:'+(owner===0?'#2586e8':owner===1?'#e45a5a':'#9ba6b5')+'"><strong>'+n+'</strong><span>'+occupants+'</span><span class="price">'+(prices[i]?prices[i]+' سکه':owner!==undefined?'مالک: '+escapeHtml(state.players[owner]?.name):'')+'</span></div>'}).join('');
+ const mine=state.players[state.turn]?.id===playerId,p=state.players[state.turn];
+ $('roll').disabled=!mine||state.hasRolled||state.players.length<2||state.finished;
+ $('buy').disabled=!mine||!state.hasRolled||!p||state.properties[p.pos]!==undefined||!prices[p.pos]||p.cash<prices[p.pos];
+ $('end').disabled=!mine||!state.hasRolled||state.finished;
 }
-async function send(){if(channel&&isHost)await channel.send({type:'broadcast',event:'state',payload:state})}
+async function subscribeRoom(){
+ if(channel)await supabase.removeChannel(channel);
+ channel=supabase.channel('secure-room-'+roomId);
+ channel.on('postgres_changes',{event:'UPDATE',schema:'public',table:'game_rooms',filter:'id=eq.'+roomId},payload=>{const next=payload.new?.state;if(isValidState(next)){state=next;render()}});
+ const {error}=await channel.subscribe();if(error)throw error;
+}
 async function enter(code,host){
- if(!/^[A-Z0-9]{4,8}$/i.test(code)){ $('lobbyMsg').textContent='کد اتاق باید ۴ تا ۸ حرف یا عدد باشد.'; return; }
- room=code.toUpperCase();isHost=host;logs=[];state=host?fresh():null;
- channel=supabase.channel('capital-'+room,{config:{broadcast:{self:false},presence:{key:playerId}}});
- channel.on('broadcast',{event:'hello'},({payload})=>{if(isHost&&state&&!state.players[1].id){state.players[1]={id:payload.id,name:'بازیکن دوم',cash:1500,pos:0,jailed:0};log('بازیکن دوم وارد شد');send();render()}});
- channel.on('broadcast',{event:'state'},({payload})=>{if(!isHost&&isValidState(payload)){state=payload;render()}});
- channel.on('broadcast',{event:'action'},({payload})=>{if(isHost)act(payload.action,payload.id)});
- channel.on('presence',{event:'sync'},()=>{const count=Object.keys(channel.presenceState()).length;$('peerText').textContent=count>1?'هر دو بازیکن متصل هستند':'منتظر بازیکن دوم'});
- await channel.subscribe(async status=>{if(status==='SUBSCRIBED'){ $('connection').textContent='متصل';await channel.track({id:playerId});if(host){log('اتاق ساخته شد. لینک دعوت را بفرست.');render();send()}else{await channel.send({type:'broadcast',event:'hello',payload:{id:playerId}});$('lobbyMsg').textContent='درخواست ورود ارسال شد.'}}});
- if(!host){setTimeout(()=>{if(!state)$('lobbyMsg').textContent='اتاق پیدا نشد یا میزبان هنوز وارد نشده است.'},5000)}
+ if(!/^[A-Z0-9]{6}$/i.test(code)){$('lobbyMsg').textContent='کد اتاق باید ۶ حرف یا عدد باشد.';return;}
+ $('connection').textContent='در حال اتصال امن...';
+ try{
+  await ensureAuth();
+  const displayName=(prompt('نام نمایشی شما چیست؟','بازیکن')||'بازیکن').trim().slice(0,24)||'بازیکن';
+  const result=host?await supabase.rpc('create_capital_room',{p_display_name:displayName}):await supabase.rpc('join_capital_room',{p_code:code.toUpperCase(),p_display_name:displayName});
+  if(result.error)throw result.error;
+  const data=result.data;room=data.code;roomId=data.room_id;state=data.state;logs=[];
+  await subscribeRoom();$('connection').textContent='اتصال امن برقرار شد';log(host?'اتاق ساخته شد. کد را برای دوستت بفرست.':'با موفقیت وارد اتاق شدی.');render();
+ }catch(error){$('connection').textContent='اتصال برقرار نشد';$('lobbyMsg').textContent='خطا: '+(error.message||'اتصال به سرور ناموفق بود');console.error(error);}
 }
-function act(action,from){if(!isHost||!state)return;let p=state.players[state.turn];if(p.id!==from)return;
- if(action==='roll'&&!hasRolled){let d=1+Math.floor(Math.random()*6);p.pos=(p.pos+d)%40;if(p.pos<d)p.cash+=200;state.lastRoll=d;hasRolled=true;let owner=state.properties[p.pos];if(owner!==undefined&&owner!==state.turn){let rent=Math.max(20,Math.floor(prices[p.pos]*.2));p.cash-=rent;state.players[owner].cash+=rent;log(p.name+' مبلغ '+rent+' سکه اجاره داد')}else if(p.pos===4||p.pos===27){p.cash-=100;log('مالیات: ۱۰۰ سکه پرداخت شد')}else if([2,7,13,17,22,32,37].includes(p.pos)){let delta=[100,-80,150,-100][Math.floor(Math.random()*4)];p.cash+=delta;log('کارت شانس: '+(delta>0?'+':'')+delta+' سکه')}else log(p.name+' عدد '+d+' آورد')}
- if(action==='buy'&&hasRolled&&state.properties[p.pos]===undefined&&prices[p.pos]&&p.cash>=prices[p.pos]){p.cash-=prices[p.pos];state.properties[p.pos]=state.turn;log(p.name+' ملک '+names[p.pos]+' را خرید')}
- if(action==='end'&&hasRolled){state.turn=1-state.turn;hasRolled=false;if(state.players.some(x=>x.cash<0)){state.finished=true;log('بازی با ورشکستگی پایان یافت')} }
- send();render()
+async function dispatch(action){
+ if(!state||!room||state.players[state.turn]?.id!==playerId)return;
+ for(const id of ['roll','buy','end'])$(id).disabled=true;
+ try{
+  const {data,error}=await supabase.rpc('perform_capital_action',{p_code:room,p_action:action});if(error)throw error;
+  if(data?.state&&isValidState(data.state)){state=data.state;render()}if(data?.event)log(data.event);
+ }catch(error){log('خطا: '+(error.message||'درخواست انجام نشد'));render();}
 }
-function dispatch(action){if(!state)return;let mine=state.players[state.turn].id===playerId;if(isHost){act(action,playerId)}else if(mine)channel.send({type:'broadcast',event:'action',payload:{action,id:playerId}})}
-$('create').onclick=()=>enter(Math.random().toString(36).slice(2,8),true);
-$('join').onclick=()=>{let c=$('roomInput').value.trim();if(c)enter(c,false);else $('lobbyMsg').textContent='کد اتاق را وارد کن.'};
+$('create').onclick=()=>enter(Math.random().toString(36).slice(2,8).toUpperCase(),true);
+$('join').onclick=()=>{const c=$('roomInput').value.trim();if(c)enter(c,false);else $('lobbyMsg').textContent='کد اتاق را وارد کن.'};
 $('roll').onclick=()=>dispatch('roll');$('buy').onclick=()=>dispatch('buy');$('end').onclick=()=>dispatch('end');
-$('copy').onclick=async()=>{await navigator.clipboard.writeText(location.origin+location.pathname+'#'+room);$('copy').textContent='لینک کپی شد'};
-$('leave').onclick=()=>{if(channel)supabase.removeChannel(channel);location.hash='';location.reload()};
+$('copy').onclick=async()=>{const link=location.origin+location.pathname+'#'+room;try{await navigator.clipboard.writeText(link);$('copy').textContent='لینک کپی شد'}catch{$('copy').textContent=room}};
+$('leave').onclick=async()=>{if(channel)await supabase.removeChannel(channel);location.hash='';location.reload()};
 if(location.hash.length>1){$('roomInput').value=location.hash.slice(1);enter(location.hash.slice(1),false)}
+$('connection').textContent='آماده اتصال به سرور';
 </script></body></html>
