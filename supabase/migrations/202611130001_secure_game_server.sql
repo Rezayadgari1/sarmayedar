@@ -28,6 +28,21 @@ create table if not exists public.game_room_members (
 create index if not exists game_room_members_user_idx on public.game_room_members(user_id);
 create index if not exists game_rooms_status_created_idx on public.game_rooms(status, created_at desc);
 
+-- Enable authenticated clients to receive room state updates through Supabase Realtime.
+do $
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'game_rooms'
+  ) then
+    alter publication supabase_realtime add table public.game_rooms;
+  end if;
+end
+$;
+
+
 alter table public.game_rooms enable row level security;
 alter table public.game_room_members enable row level security;
 
